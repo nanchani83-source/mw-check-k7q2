@@ -44,20 +44,21 @@ function sigPad(canvas) {
   canvas.width = w * dpr; canvas.height = h * dpr;
   const c = canvas.getContext("2d"); c.scale(dpr, dpr);
   c.lineWidth = 2.6; c.lineCap = "round"; c.lineJoin = "round"; c.strokeStyle = "#111";
-  let draw = false, dirty = false, last, strokes = 0, plen = 0, bx0 = 1e9, by0 = 1e9, bx1 = -1e9, by1 = -1e9;
+  let draw = false, dirty = false, last, strokes = 0, plen = 0, curLen = 0, maxLen = 0, bx0 = 1e9, by0 = 1e9, bx1 = -1e9, by1 = -1e9;
   const ext = q => { bx0 = Math.min(bx0, q[0]); by0 = Math.min(by0, q[1]); bx1 = Math.max(bx1, q[0]); by1 = Math.max(by1, q[1]); };
   const pt = e => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-  canvas.onpointerdown = e => { draw = true; last = pt(e); strokes++; ext(last); canvas.setPointerCapture(e.pointerId); c.beginPath(); c.moveTo(...last); c.lineTo(last[0] + .1, last[1]); c.stroke(); dirty = true; e.preventDefault(); };
-  canvas.onpointermove = e => { if (!draw) return; const p = pt(e); c.beginPath(); c.moveTo(...last); c.lineTo(...p); c.stroke(); plen += Math.hypot(p[0] - last[0], p[1] - last[1]); ext(p); last = p; e.preventDefault(); };
+  canvas.onpointerdown = e => { draw = true; last = pt(e); strokes++; curLen = 0; ext(last); canvas.setPointerCapture(e.pointerId); c.beginPath(); c.moveTo(...last); c.lineTo(last[0] + .1, last[1]); c.stroke(); dirty = true; e.preventDefault(); };
+  canvas.onpointermove = e => { if (!draw) return; const p = pt(e); c.beginPath(); c.moveTo(...last); c.lineTo(...p); c.stroke(); const dl = Math.hypot(p[0] - last[0], p[1] - last[1]); plen += dl; curLen += dl; if (curLen > maxLen) maxLen = curLen; ext(p); last = p; e.preventDefault(); };
   canvas.onpointerup = canvas.onpointercancel = () => { draw = false; };
   return {
-    clear() { c.clearRect(0, 0, w, h); dirty = false; strokes = 0; plen = 0; bx0 = by0 = 1e9; bx1 = by1 = -1e9; },
+    clear() { c.clearRect(0, 0, w, h); dirty = false; strokes = 0; plen = 0; curLen = 0; maxLen = 0; bx0 = by0 = 1e9; bx1 = by1 = -1e9; },
     quality() { // 정자 서명 여부를 대략 점검 (글씨 인식이 아닌 크기·획 수·꼬임 기준)
       if (!dirty) return null;
       const bw = bx1 - bx0, bh = by1 - by0, diag = Math.hypot(bw, bh) || 1;
-      if (bw < w * 0.25 || bh < h * 0.2) return "서명이 너무 작습니다.";
-      if (plen / diag > 7) return "선이 심하게 겹치거나 흘려 쓴 것으로 보입니다.";
-      if (strokes < 3) return "한 번에 이어 쓴 흘림 서명으로 보입니다.";
+      if (bw < w * 0.45 || bh < h * 0.35) return "서명이 너무 작습니다. 칸을 크게 사용해 주세요.";
+      if (strokes < 5) return "획이 너무 적어 흘려 쓴 서명으로 보입니다.";
+      if (maxLen / plen > 0.4) return "획이 길게 이어져 있어 흘림 서명으로 보입니다.";
+      if (plen / diag > 5.5) return "선이 심하게 겹치거나 꼬여 있습니다.";
       return null;
     },
     isEmpty: () => !dirty,
@@ -296,7 +297,7 @@ const views = {
       document.getElementById("sv").onclick = async () => {
         collect();
         for (let i = 0; i < list.length; i++) { if (!list[i].name.trim()) return alert(`점검자 ${i + 1} 이름을 입력하세요.`); if (!list[i].sig) return alert(`점검자 ${i + 1} 서명을 등록하세요.`); }
-        for (let i = 0; i < list.length; i++) { const q = pads[i].quality(); if (q && confirm(`점검자 ${i + 1} 서명: ${q}\n정자로 또박또박 다시 서명하시겠습니까?\n[확인] 다시 서명   [취소] 그대로 사용`)) return; }
+        for (let i = 0; i < list.length; i++) { const q = pads[i].quality(); if (q && confirm(`점검자 ${i + 1} 서명: ${q}\n정자로 또박또박 다시 서명하시겠습니까?\n[확인] 다시 서명   [취소] 그대로 사용`)) { pads[i].clear(); return; } }
         list.forEach(it => it.name = it.name.trim());
         await kvSet("settings", { inspectors: list, depts: depts.split("\n").map(v => v.trim()).filter(Boolean), lastSel: set.lastSel });
         if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); go("home");
@@ -380,7 +381,7 @@ const views = {
       cur.witness = document.getElementById("wt").value.trim();
       if (!cur.witness) return alert("수검자 직위를 선택하세요.");
       if (p.isEmpty()) return alert("수검자 서명을 받아주세요.");
-      { const q = p.quality(); if (q && confirm(`수검자 서명: ${q}\n정자로 또박또박 다시 서명하시겠습니까?\n[확인] 다시 서명   [취소] 그대로 사용`)) return; }
+      { const q = p.quality(); if (q && confirm(`수검자 서명: ${q}\n정자로 또박또박 다시 서명하시겠습니까?\n[확인] 다시 서명   [취소] 그대로 사용`)) { p.clear(); return; } }
       e.target.disabled = true; e.target.textContent = "PDF 생성 중...";
       editing = false; cur.sig = p.data(); cur.signedAt = new Date().toISOString(); cur.status = "done"; await save();
       try { await savePdf(cur, true); } catch (er) { alert("PDF 생성 오류: " + er.message); }
