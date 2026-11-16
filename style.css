@@ -57,3 +57,6 @@ small.m{color:var(--mute);font-size:13px}
 .chk{display:flex;align-items:center;gap:10px;padding:8px 0;font-size:16px;color:var(--ink);font-weight:500;margin:0}
 .chk input{width:20px;height:20px;accent-color:var(--pri)}
 .chk-box{border:1px solid var(--line);border-radius:10px;padding:2px 12px;background:var(--bg)}
+
+.sig{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='170' viewBox='0 0 300 170'><text x='150' y='88' text-anchor='middle' font-family='Malgun Gothic,sans-serif' font-size='34' font-weight='700' fill='%23000' fill-opacity='.09'>정자로 서명</text><text x='150' y='122' text-anchor='middle' font-family='Malgun Gothic,sans-serif' font-size='14' fill='%23000' fill-opacity='.18'>성명을 또박또박 써 주세요</text></svg>");background-repeat:no-repeat;background-position:center;background-size:contain}
+select{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:10px;font-size:16px;font-family:inherit;background:var(--bg);color:var(--ink)}
