@@ -360,7 +360,7 @@ const views = {
   checklist() {
     head(`${cur.dept} 점검`, () => go(editing ? "edit" : "home", editing ? cur.id : undefined));
     const answered = () => ITEMS.filter(i => cur.answers[i.id] && cur.answers[i.id].r).length;
-    $app.innerHTML = ITEMS.map(it => `<div class="card item" id="c_${it.id}"></div>`).join("") +
+    $app.innerHTML = `<button class="btn sec" id="allok" style="margin:0 0 12px">✓ 전체 양호로 선택</button>` + ITEMS.map(it => `<div class="card item" id="c_${it.id}"></div>`).join("") +
       `<div class="prog"><div class="in"><div class="bar"><i id="pb"></i></div><div class="row prow"><span id="pt"></span><button class="btn" id="go">${editing ? "수정 완료 ›" : "수검자 확인 ›"}</button></div></div></div>`;
     const paint = id => {
       const it = ITEMS.find(i => i.id === id), a = cur.answers[id] || (cur.answers[id] = {});
@@ -382,6 +382,11 @@ const views = {
     };
     const prog = () => { const n = answered(); document.getElementById("pb").style.width = n * 10 + "%"; document.getElementById("pt").textContent = `${n} / ${ITEMS.length} 완료`; };
     ITEMS.forEach(i => paint(i.id)); prog();
+    document.getElementById("allok").onclick = async () => {
+      if (answered() > 0 && !confirm("이미 선택한 항목도 모두 '양호'로 바뀝니다. 계속할까요?")) return;
+      ITEMS.forEach(i => { (cur.answers[i.id] = cur.answers[i.id] || {}).r = "ok"; });
+      await save(); ITEMS.forEach(i => paint(i.id)); prog();
+    };
     document.getElementById("go").onclick = () => {
       const miss = ITEMS.filter(i => !(cur.answers[i.id] && cur.answers[i.id].r));
       if (miss.length) { miss.forEach(i => document.getElementById("c_" + i.id).classList.add("miss")); document.getElementById("c_" + miss[0].id).scrollIntoView({ behavior: "smooth", block: "center" }); return alert(`체크하지 않은 문항 ${miss.length}개가 있습니다.`); }
@@ -453,5 +458,9 @@ const views = {
   }
 };
 
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+if ("serviceWorker" in navigator) {
+  const had = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (had && !window.__reloaded) { window.__reloaded = true; location.reload(); } });
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(r => r.update()).catch(() => {});
+}
 go("home");
