@@ -149,13 +149,13 @@ async function renderPages(rec, set) {
   const p = page.getContext("2d"); p.fillStyle = "#fff"; p.fillRect(0, 0, PW, PH);
   if (emb) { p.globalAlpha = .07; p.drawImage(emb, PW / 2 - 330, PH / 2 - 380, 660, 660); p.globalAlpha = .06; p.fillStyle = "#1f3a8a"; p.font = `bold 120px ${FONT}`; p.textAlign = "center"; p.textBaseline = "top"; p.fillText("KNUH", PW / 2, PH / 2 + 300); p.globalAlpha = 1; }
   // 서명 블록 (하단)
-  const signers = insp.map(i => ({ label: "점검자: " + i.name, sig: i.sig })).concat([{ label: "부서 입회자(수검자): " + (rec.witness || ""), sig: rec.sig }]);
+  const signers = insp.map(i => ({ label: "점검자: " + i.name, sig: i.sig })).concat([{ label: "부서 입회자(수검자): " + (rec.dept ? rec.dept + " " : "") + (rec.witness || ""), sig: rec.sig }]);
   const n = signers.length, gap = 36, cw = (PW - MX * 2 - gap * (n - 1)) / n, sigH = 110, blockH = 36 + sigH + 14 + 30 + 34;
   const bTop = PH - 80 - blockH;
   p.textBaseline = "top"; p.textAlign = "left";
   for (let k = 0; k < n; k++) {
     const sx = MX + k * (cw + gap), sg = signers[k];
-    p.fillStyle = "#000"; p.font = `bold ${n > 3 ? 21 : 24}px ${FONT}`; p.fillText(sg.label, sx, bTop, cw);
+    p.fillStyle = "#000"; let fs0 = n > 3 ? 21 : 24; p.font = `bold ${fs0}px ${FONT}`; while (p.measureText(sg.label).width > cw && fs0 > 14) { fs0--; p.font = `bold ${fs0}px ${FONT}`; } p.fillText(sg.label, sx, bTop, cw);
     if (sg.sig) { const im = await loadImg(sg.sig); const s2 = Math.min((cw - 20) / im.width, sigH / im.height); p.drawImage(im, sx, bTop + 36, im.width * s2, im.height * s2); }
     p.strokeStyle = "#333"; p.lineWidth = 2; p.beginPath(); p.moveTo(sx, bTop + 36 + sigH + 4); p.lineTo(sx + cw, bTop + 36 + sigH + 4); p.stroke();
     p.fillStyle = "#555"; p.font = `20px ${FONT}`;
@@ -237,6 +237,37 @@ async function getSettings() {
   const s = (await kvGet("settings")) || {};
   if (!s.inspectors) s.inspectors = s.inspector ? [{ name: s.inspector, sig: s.sig || "" }] : [];
   s.depts = s.depts || []; return s;
+}
+const OPINIONS = [ // 종합의견.docx 기준, 기재 건수 많은 순
+  { k: "mix", n: 9, t: "일반폐기물 혼입 방지 및 분리배출 철저 요청" },
+  { k: "date", n: 6, t: "봉투형 용기 사용개시연월일 기재 철저 요청" },
+  { k: "keep", n: 6, t: "보관기한 준수 및 기한 초과 용기 즉시 교체 지도" },
+  { k: "cap", n: 6, t: "용기 적정용량(75%) 준수 및 과적재 주의 요청" },
+  { k: "pack", n: 5, t: "의료소모품 포장지·일회용 기저귀 등 일반쓰레기 분리배출 안내" },
+  { k: "priv", n: 5, t: "개인정보(라벨지·약봉투·종이류) 분리배출 및 파쇄 안내" },
+  { k: "liq", n: 4, t: "주사기·수액팩 등 액상·내용물 제거 후 폐기 권고" },
+  { k: "cut", n: 3, t: "의료폐기물 발생량 감축 및 안전관리 협조 요청" },
+  { k: "judge", n: 2, t: "의료폐기물 해당 여부 확인·안내" },
+  { k: "edu", n: 1, t: "인턴·전공의 등 대상 분리배출 교육 안내" },
+  { k: "spec", n: 1, t: "검체 배출주기 확인 안내" }
+];
+function opinionUI(rec) {
+  const sel = rec.opSel || [], custom = rec.opSel ? (rec.opCustom || "") : (rec.opinion || ""), cOn = rec.opSel ? !!rec.opCustomOn : !!rec.opinion;
+  return `<div class="chk-box" id="opbox">${OPINIONS.map(o => `<label class="chk"><input type="checkbox" data-op="${o.k}" ${sel.includes(o.k) ? "checked" : ""}> <span>${esc(o.t)} <small class="m">(${o.n}건)</small></span></label>`).join("")}
+    <label class="chk"><input type="checkbox" id="opc" ${cOn ? "checked" : ""}> <span>직접 입력</span></label></div>
+    <textarea id="opt" placeholder="종합의견을 직접 입력하세요" style="margin-top:8px;${cOn ? "" : "display:none"}">${esc(custom)}</textarea>`;
+}
+function readOpinion(rec) {
+  rec.opSel = [...document.querySelectorAll("[data-op]:checked")].map(c => c.dataset.op);
+  rec.opCustomOn = document.getElementById("opc").checked; rec.opCustom = document.getElementById("opt").value.trim();
+  const lines = OPINIONS.filter(o => rec.opSel.includes(o.k)).map(o => o.t);
+  if (rec.opCustomOn && rec.opCustom) lines.push(rec.opCustom);
+  rec.opinion = lines.length > 1 ? lines.map((l, i) => `${i + 1}. ${l}`).join("\n") : lines.join("");
+}
+function bindOpinion(rec, autosave) {
+  const box = document.getElementById("opbox"), t = document.getElementById("opt");
+  box.onchange = () => { t.style.display = document.getElementById("opc").checked ? "" : "none"; readOpinion(rec); if (autosave) save(); };
+  t.oninput = () => { readOpinion(rec); if (autosave) save(); };
 }
 const POS = ["수간호사", "부서장", "팀장", "간호사", "직원"];
 const posSelect = v => `<select id="wt"><option value="">직위 선택</option>${(POS.includes(v) || !v ? POS : POS.concat([v])).map(o => `<option ${o === v ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
@@ -369,22 +400,21 @@ const views = {
       ${ITEMS.map(it => { const a = cur.answers[it.id]; return `<div class="card item"><b>${it.id}. ${esc(it.title)}</b> <span class="tag ${a.r}">${RESULTS[a.r]}</span>
         ${a.r === "guide" && a.note ? `<div class="note">${esc(a.note)}</div>` : ""}
         ${a.r === "guide" && (a.photos || []).length ? `<div class="photos">${a.photos.map(p => `<div class="ph"><img src="${p}"></div>`).join("")}</div>` : ""}</div>`; }).join("")}
-      <div class="card"><label>종합의견 (선택)</label><textarea id="op">${esc(cur.opinion)}</textarea>
+      <div class="card"><label>종합의견 (선택 · 복수 선택 가능)</label>${opinionUI(cur)}
       <label>부서 입회자(수검자) 직위</label>${posSelect(cur.witness)}
       <label>서명 — 위 내용을 확인했습니다</label><canvas class="sig" id="sg"></canvas>
       <div class="row"><button class="btn sec" id="clr">지우기</button></div>
       <button class="btn" id="fin">서명 완료 · PDF 저장</button></div>`;
     const p = sigPad(document.getElementById("sg"));
     document.getElementById("clr").onclick = () => p.clear();
-    document.getElementById("op").oninput = e => { cur.opinion = e.target.value; save(); };
+    bindOpinion(cur, true);
     document.getElementById("fin").onclick = async e => {
-      cur.witness = document.getElementById("wt").value.trim();
+      readOpinion(cur); cur.witness = document.getElementById("wt").value.trim();
       if (!cur.witness) return alert("수검자 직위를 선택하세요.");
       if (p.isEmpty()) return alert("수검자 서명을 받아주세요.");
       { const q = p.quality(); if (q && confirm(`수검자 서명: ${q}\n정자로 또박또박 다시 서명하시겠습니까?\n[확인] 다시 서명   [취소] 그대로 사용`)) { p.clear(); return; } }
       e.target.disabled = true; e.target.textContent = "PDF 생성 중...";
       editing = false; cur.sig = p.data(); cur.signedAt = new Date().toISOString(); cur.status = "done"; await save();
-      try { await savePdf(cur, true); } catch (er) { alert("PDF 생성 오류: " + er.message); }
       go("detail", cur.id);
     };
   },
@@ -396,11 +426,12 @@ const views = {
       <label>점검부서</label><input type="text" id="dp" value="${esc(cur.dept)}">
       <label>점검자</label><div class="chk-box">${inspChecks(set, (cur.insp || []).map(i => i.name))}</div>
       <label>부서 입회자(수검자) 직위</label>${posSelect(cur.witness)}
-      <label>종합의견</label><textarea id="op">${esc(cur.opinion)}</textarea>
+      <label>종합의견 (복수 선택 가능)</label>${opinionUI(cur)}
       <button class="btn sec" id="it">점검 항목 수정 (체크·지적사항·사진)</button>
       <button class="btn sec" id="rs">수검자 서명 다시 받기</button>
       <button class="btn" id="sv">저장</button></div>`;
-    const grab = () => { cur.when = document.getElementById("wh").value || cur.when; cur.dept = document.getElementById("dp").value.trim() || cur.dept; cur.witness = document.getElementById("wt").value.trim(); cur.opinion = document.getElementById("op").value; const sel = pickInsp(set); if (sel.length) cur.insp = sel.map(i => ({ name: i.name, sig: i.sig })); };
+    bindOpinion(cur, false);
+    const grab = () => { cur.when = document.getElementById("wh").value || cur.when; cur.dept = document.getElementById("dp").value.trim() || cur.dept; cur.witness = document.getElementById("wt").value.trim(); readOpinion(cur); const sel = pickInsp(set); if (sel.length) cur.insp = sel.map(i => ({ name: i.name, sig: i.sig })); };
     document.getElementById("it").onclick = async () => { grab(); await save(); editing = true; go("checklist"); };
     document.getElementById("rs").onclick = async () => { grab(); await save(); editing = false; go("review"); };
     document.getElementById("sv").onclick = async () => { grab(); await save(); editing = false; go("detail", id); };
