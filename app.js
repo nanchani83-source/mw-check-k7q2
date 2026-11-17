@@ -275,6 +275,30 @@ function bindHist(el, getDept, getWhen, inputs) {
   upd();
 }
 
+/* ---------- 점검부서 목록 (전회차 이력 + 설정 + 이전 점검 기록) + 직접 입력 ---------- */
+async function deptList(set, when) {
+  const names = new Set((set.depts || []).map(d => String(d).trim()));
+  const hist = await loadHistory().catch(() => null) || [];
+  const ym = String(when || "").slice(0, 7), warn = [];
+  hist.forEach(x => (Array.isArray(x.dept) ? x.dept : [x.dept]).forEach(d => { if (d) { names.add(String(d).trim()); if (String(x.date) < ym) warn.push(String(d)); } }));
+  (await recAll()).forEach(r => { if (r.dept) names.add(String(r.dept).trim()); });
+  return [...names].filter(Boolean).sort((a, b) => a.localeCompare(b, "ko", { numeric: true }))
+    .map(n => ({ name: n, warn: warn.some(w => histMatch(n, w)) }));
+}
+function deptPicker(list, val) {
+  const inList = !val || list.some(o => o.name === val);
+  return `<select id="dsel"><option value="">부서 선택</option>${list.map(o => `<option value="${esc(o.name)}" ${o.name === val ? "selected" : ""}>${esc(o.name)}${o.warn ? "  ⚠" : ""}</option>`).join("")}<option value="__custom" ${!inList ? "selected" : ""}>✎ 직접 입력</option></select>
+    <input type="text" id="dp" placeholder="부서명을 직접 입력하세요" value="${esc(val)}" style="margin-top:8px;${inList ? "display:none" : ""}">
+    <small class="m">⚠ = 전회차 위반이력 있는 부서</small>`;
+}
+function bindDeptPicker() {
+  const sel = document.getElementById("dsel"), t = document.getElementById("dp");
+  sel.onchange = () => {
+    if (sel.value === "__custom") { t.style.display = ""; t.value = ""; t.focus(); } else { t.style.display = "none"; t.value = sel.value; }
+    t.dispatchEvent(new Event("input"));
+  };
+}
+
 /* ---------- 설정 ---------- */
 async function getSettings() {
   const s = (await kvGet("settings")) || {};
@@ -386,11 +410,12 @@ const views = {
 
   async info() {
     head("점검 정보", () => go("home"));
-    const set = await getSettings();
+    const set = await getSettings(), dlist = await deptList(set, cur.when);
     $app.innerHTML = `<div class="card"><label>점검일자</label><input type="date" id="wh" value="${esc(String(cur.when).slice(0, 10))}">
-      <label>점검부서</label><input type="text" id="dp" list="dl" value="${esc(cur.dept)}" placeholder="부서명 입력/선택"><datalist id="dl">${(set.depts || []).map(d => `<option value="${esc(d)}">`).join("")}</datalist><div id="hist" style="margin-top:8px"></div>
+      <label>점검부서</label>${deptPicker(dlist, cur.dept)}<div id="hist" style="margin-top:8px"></div>
       <label>점검자 (해당자 모두 선택)</label><div class="chk-box">${inspChecks(set, set.lastSel || [set.inspectors[0] && set.inspectors[0].name])}</div>
       <button class="btn" id="nx">점검 시작</button></div>`;
+    bindDeptPicker();
     bindHist(document.getElementById("hist"), () => document.getElementById("dp").value.trim(), () => document.getElementById("wh").value || nowLocal(), [document.getElementById("dp"), document.getElementById("wh")]);
     document.getElementById("nx").onclick = async () => {
       cur.when = document.getElementById("wh").value || nowLocal(); cur.dept = document.getElementById("dp").value.trim();
@@ -472,16 +497,16 @@ const views = {
 
   async edit(id) {
     head("점검 내용 수정", () => { editing = false; go("detail", id); });
-    cur = await recGet(id); const set = await getSettings();
+    cur = await recGet(id); const set = await getSettings(), dlist = await deptList(set, cur.when);
     $app.innerHTML = `<div class="card"><label>점검일자</label><input type="date" id="wh" value="${esc(String(cur.when).slice(0, 10))}">
-      <label>점검부서</label><input type="text" id="dp" value="${esc(cur.dept)}">
+      <label>점검부서</label>${deptPicker(dlist, cur.dept)}
       <label>점검자</label><div class="chk-box">${inspChecks(set, (cur.insp || []).map(i => i.name))}</div>
       <label>부서 입회자(수검자) 직위</label>${posSelect(cur.witness)}
       <label>특기사항 (복수 선택 가능)</label>${opinionUI(cur)}
       <button class="btn sec" id="it">점검 항목 수정 (체크·지적사항·사진)</button>
       <button class="btn sec" id="rs">수검자 서명 다시 받기</button>
       <button class="btn" id="sv">저장</button></div>`;
-    bindOpinion(cur, false);
+    bindOpinion(cur, false); bindDeptPicker();
     const grab = () => { cur.when = document.getElementById("wh").value || cur.when; cur.dept = document.getElementById("dp").value.trim() || cur.dept; cur.witness = document.getElementById("wt").value.trim(); readOpinion(cur); const sel = pickInsp(set); if (sel.length) cur.insp = sel.map(i => ({ name: i.name, sig: i.sig })); };
     document.getElementById("it").onclick = async () => { grab(); await save(); editing = true; go("checklist"); };
     document.getElementById("rs").onclick = async () => { grab(); await save(); editing = false; go("review"); };

@@ -70,3 +70,6 @@ select{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:1
 .histx{font-size:12px;color:var(--mute);padding:2px 4px}
 .sp{font-size:15px;margin-top:6px;padding-left:2px}
 @media(prefers-color-scheme:dark){.hist{background:#33280f;border-color:#5b4620;color:#f3d79b}.hist small{color:#d2b36f}.hist .hrow{border-color:#5b4620}}
+
+select{appearance:auto}
+#dsel{font-weight:600}
