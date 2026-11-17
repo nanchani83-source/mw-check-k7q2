@@ -13,7 +13,7 @@ main{padding:16px 16px 110px;max-width:600px;margin:auto}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:12px;box-shadow:var(--sh)}
 label{display:block;font-size:12.5px;font-weight:600;color:var(--mute);margin:14px 0 6px}
 label:first-child{margin-top:0}
-input[type=text],input[type=datetime-local],textarea{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:10px;font-size:16px;font-family:inherit;background:var(--bg);color:var(--ink);outline:none}
+input[type=text],input[type=date],textarea{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:10px;font-size:16px;font-family:inherit;background:var(--bg);color:var(--ink);outline:none}
 input:focus,textarea:focus{border-color:var(--pri);background:var(--card)}
 input:disabled{color:var(--mute)}
 textarea{min-height:68px;resize:vertical}
@@ -60,3 +60,13 @@ small.m{color:var(--mute);font-size:13px}
 
 .sig{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='170' viewBox='0 0 300 170'><text x='150' y='88' text-anchor='middle' font-family='Malgun Gothic,sans-serif' font-size='34' font-weight='700' fill='%23000' fill-opacity='.09'>정자로 서명</text><text x='150' y='122' text-anchor='middle' font-family='Malgun Gothic,sans-serif' font-size='14' fill='%23000' fill-opacity='.18'>성명을 또박또박 써 주세요</text></svg>");background-repeat:no-repeat;background-position:center;background-size:contain}
 select{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:10px;font-size:16px;font-family:inherit;background:var(--bg);color:var(--ink)}
+
+.hist{background:#fff7e6;border:1px solid #f5d9a6;border-radius:10px;padding:6px 10px;font-size:13px;color:#7a4a00}
+.hist summary{cursor:pointer;font-weight:600;list-style:none}
+.hist summary::-webkit-details-marker{display:none}
+.hist .hrow{border-top:1px solid #f5d9a6;margin-top:8px;padding-top:8px;line-height:1.5}
+.hist .rep{background:#c62828;color:#fff;border-radius:99px;padding:0 7px;font-size:11px;font-weight:700}
+.hist small{color:#8a6d3b}
+.histx{font-size:12px;color:var(--mute);padding:2px 4px}
+.sp{font-size:15px;margin-top:6px;padding-left:2px}
+@media(prefers-color-scheme:dark){.hist{background:#33280f;border-color:#5b4620;color:#f3d79b}.hist small{color:#d2b36f}.hist .hrow{border-color:#5b4620}}

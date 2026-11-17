@@ -143,7 +143,7 @@ async function renderPages(rec, set) {
   line(y); y += 20;
   const c = count(rec);
   font(26, true); x.fillText(`점검 결과: 양호 ( ${c.ok} )건 / 지도 ( ${c.guide} )건 / 해당없음 ( ${c.na} )건`, MX, y); y += 42;
-  if (rec.opinion) { font(23, true); x.fillText("종합의견", MX, y); y += 32; font(23); wrap(x, rec.opinion, PW - MX * 2).forEach(l => { x.fillText(l, MX, y); y += 31; }); y += 4; }
+  if (rec.opinion) { font(23, true); x.fillText("특기사항", MX, y); y += 32; font(23); wrap(x, rec.opinion, PW - MX * 2).forEach(l => { x.fillText(l, MX, y); y += 31; }); y += 4; }
   // A4 한 장 구성: 워터마크 + 내용(편철 여백 아래로) + 서명(페이지 하단 고정)
   const page = document.createElement("canvas"); page.width = PW; page.height = PH;
   const p = page.getContext("2d"); p.fillStyle = "#fff"; p.fillRect(0, 0, PW, PH);
@@ -232,13 +232,56 @@ async function savePhotos(rec) {
   setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 60000);
 }
 
+/* ---------- 전회차 위반이력 (점검이력 페이지 참조, 읽기 전용) ---------- */
+const HIST_URL = "https://nanchani83-source.github.io/waste/inspection.html";
+let histMem = null, histAt = 0;
+async function loadHistory() {
+  if (histMem && Date.now() - histAt < 300000) return histMem;
+  let list = null;
+  try {
+    const t = await (await fetch(HIST_URL, { cache: "no-cache" })).text();
+    const m = t.match(/const\s+INSPECTIONS\s*=\s*(\[[\s\S]*?\n\]);/);
+    if (m) { list = new Function("return " + m[1])(); await kvSet("hist", { at: Date.now(), list }); }
+  } catch (e) { /* 오프라인이면 마지막 저장본 사용 */ }
+  if (!Array.isArray(list)) { const c = await kvGet("hist"); list = c && c.list; }
+  histMem = Array.isArray(list) ? list : null; histAt = Date.now(); return histMem;
+}
+const normDept = v => String(v || "").replace(/[\s\-_()·.]/g, "").toLowerCase();
+function histMatch(a, b) { // 같거나 비슷한 부서명 (병동은 번호가 같을 때만)
+  const A = normDept(a), B = normDept(b); if (!A || !B) return false;
+  if (A === B) return true;
+  const na = A.match(/(\d+)병동/), nb = B.match(/(\d+)병동/);
+  if (na && nb) return na[1] === nb[1];
+  return Math.min(A.length, B.length) >= 3 && (A.includes(B) || B.includes(A));
+}
+async function histHTML(dept, when) {
+  const list = await loadHistory();
+  if (list === null) return `<div class="histx">전회차 위반이력 조회 불가 (오프라인·미저장)</div>`;
+  const ym = String(when || "").slice(0, 7);
+  const hits = list.filter(x => String(x.date) < ym && (Array.isArray(x.dept) ? x.dept : [x.dept]).some(d => histMatch(dept, d)))
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  if (!hits.length) return `<div class="histx">전회차 위반이력 없음</div>`;
+  const rows = hits.map(h => {
+    const items = Object.entries(h.items || {}).map(([id, n]) => { const it = ITEMS.find(i => i.id === id); return `${esc(id)} ${esc(it ? it.title : "")} <b>${esc(n)}건</b>`; }).join("<br>");
+    return `<div class="hrow"><b>${esc(h.date)} · ${esc(Array.isArray(h.dept) ? h.dept.join(", ") : h.dept)}</b>${h.repeat ? ` <span class="rep">반복</span>` : ""}<div>${items}</div>
+      ${h.action ? `<small>조치: ${esc(h.action)}</small>` : ""}${h.note ? `<br><small>비고: ${esc(h.note)}</small>` : ""}</div>`;
+  }).join("");
+  return `<details class="hist"><summary>⚠ 전회차 위반이력 ${hits.length}건 · 눌러서 확인</summary>${rows}</details>`;
+}
+function bindHist(el, getDept, getWhen, inputs) {
+  let t, seq = 0;
+  const upd = async () => { const n = ++seq, d = getDept(); const h = d ? await histHTML(d, getWhen()) : ""; if (n === seq) el.innerHTML = h; };
+  (inputs || []).forEach(i => i.addEventListener("input", () => { clearTimeout(t); t = setTimeout(upd, 300); }));
+  upd();
+}
+
 /* ---------- 설정 ---------- */
 async function getSettings() {
   const s = (await kvGet("settings")) || {};
   if (!s.inspectors) s.inspectors = s.inspector ? [{ name: s.inspector, sig: s.sig || "" }] : [];
   s.depts = s.depts || []; return s;
 }
-const OPINIONS = [ // 종합의견.docx 기준, 기재 건수 많은 순
+const OPINIONS = [ // 특기사항 목록 (종합의견.docx 기준, 기재 건수 많은 순)
   { k: "mix", n: 9, t: "일반폐기물 혼입 방지 및 분리배출 철저 요청" },
   { k: "date", n: 6, t: "봉투형 용기 사용개시연월일 기재 철저 요청" },
   { k: "keep", n: 6, t: "보관기한 준수 및 기한 초과 용기 즉시 교체 지도" },
@@ -253,9 +296,9 @@ const OPINIONS = [ // 종합의견.docx 기준, 기재 건수 많은 순
 ];
 function opinionUI(rec) {
   const sel = rec.opSel || [], custom = rec.opSel ? (rec.opCustom || "") : (rec.opinion || ""), cOn = rec.opSel ? !!rec.opCustomOn : !!rec.opinion;
-  return `<div class="chk-box" id="opbox">${OPINIONS.map(o => `<label class="chk"><input type="checkbox" data-op="${o.k}" ${sel.includes(o.k) ? "checked" : ""}> <span>${esc(o.t)} <small class="m">(${o.n}건)</small></span></label>`).join("")}
+  return `<div class="chk-box" id="opbox">${OPINIONS.map(o => `<label class="chk"><input type="checkbox" data-op="${o.k}" ${sel.includes(o.k) ? "checked" : ""}> <span>${esc(o.t)}</span></label>`).join("")}
     <label class="chk"><input type="checkbox" id="opc" ${cOn ? "checked" : ""}> <span>직접 입력</span></label></div>
-    <textarea id="opt" placeholder="종합의견을 직접 입력하세요" style="margin-top:8px;${cOn ? "" : "display:none"}">${esc(custom)}</textarea>`;
+    <textarea id="opt" placeholder="특기사항을 직접 입력하세요" style="margin-top:8px;${cOn ? "" : "display:none"}">${esc(custom)}</textarea>`;
 }
 function readOpinion(rec) {
   rec.opSel = [...document.querySelectorAll("[data-op]:checked")].map(c => c.dataset.op);
@@ -345,9 +388,10 @@ const views = {
     head("점검 정보", () => go("home"));
     const set = await getSettings();
     $app.innerHTML = `<div class="card"><label>점검일자</label><input type="date" id="wh" value="${esc(String(cur.when).slice(0, 10))}">
-      <label>점검부서</label><input type="text" id="dp" list="dl" value="${esc(cur.dept)}" placeholder="부서명 입력/선택"><datalist id="dl">${(set.depts || []).map(d => `<option value="${esc(d)}">`).join("")}</datalist>
+      <label>점검부서</label><input type="text" id="dp" list="dl" value="${esc(cur.dept)}" placeholder="부서명 입력/선택"><datalist id="dl">${(set.depts || []).map(d => `<option value="${esc(d)}">`).join("")}</datalist><div id="hist" style="margin-top:8px"></div>
       <label>점검자 (해당자 모두 선택)</label><div class="chk-box">${inspChecks(set, set.lastSel || [set.inspectors[0] && set.inspectors[0].name])}</div>
       <button class="btn" id="nx">점검 시작</button></div>`;
+    bindHist(document.getElementById("hist"), () => document.getElementById("dp").value.trim(), () => document.getElementById("wh").value || nowLocal(), [document.getElementById("dp"), document.getElementById("wh")]);
     document.getElementById("nx").onclick = async () => {
       cur.when = document.getElementById("wh").value || nowLocal(); cur.dept = document.getElementById("dp").value.trim();
       if (!cur.dept) return alert("점검부서를 입력하세요.");
@@ -360,7 +404,8 @@ const views = {
   checklist() {
     head(`${cur.dept} 점검`, () => go(editing ? "edit" : "home", editing ? cur.id : undefined));
     const answered = () => ITEMS.filter(i => cur.answers[i.id] && cur.answers[i.id].r).length;
-    $app.innerHTML = `<button class="btn sec" id="allok" style="margin:0 0 12px">✓ 전체 양호로 선택</button>` + ITEMS.map(it => `<div class="card item" id="c_${it.id}"></div>`).join("") +
+    $app.innerHTML = `<div id="hist" style="margin-bottom:10px"></div><button class="btn sec" id="allok" style="margin:0 0 12px">✓ 전체 양호로 선택</button>` + ITEMS.map(it => `<div class="card item" id="c_${it.id}"></div>`).join("") +
+      `<div class="card"><label>특기사항 (선택 · 복수 선택 가능)</label>${opinionUI(cur)}</div>` +
       `<div class="prog"><div class="in"><div class="bar"><i id="pb"></i></div><div class="row prow"><span id="pt"></span><button class="btn" id="go">${editing ? "수정 완료 ›" : "수검자 확인 ›"}</button></div></div></div>`;
     const paint = id => {
       const it = ITEMS.find(i => i.id === id), a = cur.answers[id] || (cur.answers[id] = {});
@@ -382,12 +427,14 @@ const views = {
     };
     const prog = () => { const n = answered(); document.getElementById("pb").style.width = n * 10 + "%"; document.getElementById("pt").textContent = `${n} / ${ITEMS.length} 완료`; };
     ITEMS.forEach(i => paint(i.id)); prog();
+    bindOpinion(cur, true); bindHist(document.getElementById("hist"), () => cur.dept, () => cur.when);
     document.getElementById("allok").onclick = async () => {
       if (answered() > 0 && !confirm("이미 선택한 항목도 모두 '양호'로 바뀝니다. 계속할까요?")) return;
       ITEMS.forEach(i => { (cur.answers[i.id] = cur.answers[i.id] || {}).r = "ok"; });
       await save(); ITEMS.forEach(i => paint(i.id)); prog();
     };
     document.getElementById("go").onclick = () => {
+      readOpinion(cur);
       const miss = ITEMS.filter(i => !(cur.answers[i.id] && cur.answers[i.id].r));
       if (miss.length) { miss.forEach(i => document.getElementById("c_" + i.id).classList.add("miss")); document.getElementById("c_" + miss[0].id).scrollIntoView({ behavior: "smooth", block: "center" }); return alert(`체크하지 않은 문항 ${miss.length}개가 있습니다.`); }
       const noPh = ITEMS.filter(i => cur.answers[i.id].r === "guide" && !(cur.answers[i.id].photos || []).length);
@@ -405,16 +452,15 @@ const views = {
       ${ITEMS.map(it => { const a = cur.answers[it.id]; return `<div class="card item"><b>${it.id}. ${esc(it.title)}</b> <span class="tag ${a.r}">${RESULTS[a.r]}</span>
         ${a.r === "guide" && a.note ? `<div class="note">${esc(a.note)}</div>` : ""}
         ${a.r === "guide" && (a.photos || []).length ? `<div class="photos">${a.photos.map(p => `<div class="ph"><img src="${p}"></div>`).join("")}</div>` : ""}</div>`; }).join("")}
-      <div class="card"><label>종합의견 (선택 · 복수 선택 가능)</label>${opinionUI(cur)}
-      <label>부서 입회자(수검자) 직위</label>${posSelect(cur.witness)}
+      ${cur.opinion ? `<div class="card"><b>특기사항</b>${cur.opinion.split("\n").map(l => `<div class="sp">${esc(l)}</div>`).join("")}</div>` : ""}
+      <div class="card">      <label>부서 입회자(수검자) 직위</label>${posSelect(cur.witness)}
       <label>서명 — 위 내용을 확인했습니다</label><canvas class="sig" id="sg"></canvas>
       <div class="row"><button class="btn sec" id="clr">지우기</button></div>
       <button class="btn" id="fin">서명 완료 · PDF 저장</button></div>`;
     const p = sigPad(document.getElementById("sg"));
     document.getElementById("clr").onclick = () => p.clear();
-    bindOpinion(cur, true);
     document.getElementById("fin").onclick = async e => {
-      readOpinion(cur); cur.witness = document.getElementById("wt").value.trim();
+      cur.witness = document.getElementById("wt").value.trim();
       if (!cur.witness) return alert("수검자 직위를 선택하세요.");
       if (p.isEmpty()) return alert("수검자 서명을 받아주세요.");
       { const q = p.quality(); if (q && confirm(`수검자 서명: ${q}\n정자로 또박또박 다시 서명하시겠습니까?\n[확인] 다시 서명   [취소] 그대로 사용`)) { p.clear(); return; } }
@@ -431,7 +477,7 @@ const views = {
       <label>점검부서</label><input type="text" id="dp" value="${esc(cur.dept)}">
       <label>점검자</label><div class="chk-box">${inspChecks(set, (cur.insp || []).map(i => i.name))}</div>
       <label>부서 입회자(수검자) 직위</label>${posSelect(cur.witness)}
-      <label>종합의견 (복수 선택 가능)</label>${opinionUI(cur)}
+      <label>특기사항 (복수 선택 가능)</label>${opinionUI(cur)}
       <button class="btn sec" id="it">점검 항목 수정 (체크·지적사항·사진)</button>
       <button class="btn sec" id="rs">수검자 서명 다시 받기</button>
       <button class="btn" id="sv">저장</button></div>`;
